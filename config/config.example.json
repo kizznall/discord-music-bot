@@ -1,0 +1,7 @@
+{
+    "token": "YOUR_BOT_TOKEN_HERE",
+    "voice_channel_id": "YOUR_VOICE_CHANNEL_ID",
+    "admin_users": ["YOUR_DISCORD_USER_ID"],
+    "admin_roles": ["Admin"],
+    "public_access": true
+}
