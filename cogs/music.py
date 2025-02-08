@@ -5,6 +5,7 @@ import re
 import asyncio
 import yt_dlp
 import logging
+import subprocess
 
 # Configure logging
 logging.basicConfig(level=logging.WARNING,
@@ -170,7 +171,8 @@ class MusicCog(commands.Cog):
             try:
                 audio = discord.FFmpegPCMAudio(
                     self.current_track.stream_url,
-                    **self.bot.ffmpeg_options
+                    **self.bot.ffmpeg_options,
+                    stderr=subprocess.DEVNULL  # Suppress FFmpeg warnings
                 )
                 audio = discord.PCMVolumeTransformer(audio, volume=1.0)
             except Exception as e:

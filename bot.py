@@ -35,7 +35,7 @@ class MusicBot(commands.Bot):
         }
         self.ffmpeg_options = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-            'options': '-vn -ar 48000 -ac 2 -f s16le -acodec pcm_s16le'
+            'options': '-acodec pcm_s16le -f s16le -ar 48000 -ac 2'
         }
         self.yt_dlp = yt_dlp.YoutubeDL(self.yt_dlp_format_options)
     
