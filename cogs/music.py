@@ -6,6 +6,7 @@ import asyncio
 import yt_dlp
 import logging
 import subprocess
+from typing import Set
 
 # Configure logging
 logging.basicConfig(level=logging.WARNING,
@@ -21,6 +22,11 @@ class Track:
         self.stream_url = None
         self.priority = priority
 
+class VoteSkip:
+    def __init__(self):
+        self.votes: Set[int] = set()  # Set of user IDs who voted
+        self.message = None  # Discord message showing vote count
+
 class MusicCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -29,6 +35,7 @@ class MusicCog(commands.Cog):
         self.voice_client = None
         self.last_activity = datetime.now()
         self.check_inactivity.start()
+        self.vote_skip = None
 
         # Set logging level based on debug mode
         if not self.bot.config.get('debug_mode', False):
@@ -51,6 +58,38 @@ class MusicCog(commands.Cog):
         if str(member.id) in self.bot.config.get('admin_users', []):
             return True
         return any(role.name in self.bot.config.get('skip_roles', []) for role in member.roles)
+
+    def get_voice_members_count(self) -> int:
+        """Get the number of members in the voice channel (excluding bots)"""
+        if not self.voice_client or not self.voice_client.channel:
+            return 0
+        return sum(1 for m in self.voice_client.channel.members if not m.bot)
+
+    def get_required_votes(self) -> int:
+        """Get the number of votes required to skip (50% of voice members)"""
+        member_count = self.get_voice_members_count()
+        return max(2, (member_count + 1) // 2)  # At least 2 votes, otherwise 50% rounded up
+
+    async def update_vote_message(self):
+        """Update the vote skip message with current count"""
+        if not self.vote_skip or not self.vote_skip.message:
+            return
+
+        required_votes = self.get_required_votes()
+        current_votes = len(self.vote_skip.votes)
+        remaining_votes = max(0, required_votes - current_votes)
+
+        embed = discord.Embed(
+            title="Vote Skip",
+            description=f"Voting to skip: {self.current_track.title}",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="Status",
+            value=f"⚡ {current_votes}/{required_votes} votes\n"
+                  f"Need {remaining_votes} more vote{'s' if remaining_votes != 1 else ''}"
+        )
+        await self.vote_skip.message.edit(embed=embed)
 
     async def ensure_voice_client(self, ctx):
         try:
@@ -155,10 +194,12 @@ class MusicCog(commands.Cog):
     async def play_next(self):
         if not self.queue or not self.voice_client:
             self.current_track = None
+            self.vote_skip = None  # Clear vote skip when track ends
             return
 
         try:
             self.current_track = self.queue.pop(0)
+            self.vote_skip = None  # Reset vote skip for new track
             
             if not self.current_track.stream_url:
                 info = await self.get_track_info(self.current_track.url)
@@ -172,7 +213,7 @@ class MusicCog(commands.Cog):
                 audio = discord.FFmpegPCMAudio(
                     self.current_track.stream_url,
                     **self.bot.ffmpeg_options,
-                    stderr=subprocess.DEVNULL  # Suppress FFmpeg warnings
+                    stderr=subprocess.DEVNULL
                 )
                 audio = discord.PCMVolumeTransformer(audio, volume=1.0)
             except Exception as e:
@@ -204,6 +245,47 @@ class MusicCog(commands.Cog):
 
         self.voice_client.stop()
         await ctx.send("⏭️ Skipped!")
+
+    @commands.command(name='voteskip', aliases=['vs'])
+    async def voteskip(self, ctx):
+        """Vote to skip the current track"""
+        if not self.voice_client or not self.voice_client.is_playing():
+            await ctx.send("❌ Nothing is playing!")
+            return
+
+        # Check if user is in the same voice channel
+        if not ctx.author.voice or ctx.author.voice.channel != self.voice_client.channel:
+            await ctx.send("❌ You must be in the voice channel to vote!")
+            return
+
+        # Initialize vote skip if not exists
+        if not self.vote_skip:
+            self.vote_skip = VoteSkip()
+            embed = discord.Embed(
+                title="Vote Skip",
+                description=f"Voting to skip: {self.current_track.title}",
+                color=discord.Color.blue()
+            )
+            embed.add_field(
+                name="Status",
+                value="⚡ 0/0 votes\nStarting vote..."
+            )
+            self.vote_skip.message = await ctx.send(embed=embed)
+
+        # Add vote
+        self.vote_skip.votes.add(ctx.author.id)
+        
+        # Check if we have enough votes
+        current_votes = len(self.vote_skip.votes)
+        required_votes = self.get_required_votes()
+
+        await self.update_vote_message()
+
+        # If we have enough votes, skip the track
+        if current_votes >= required_votes:
+            self.voice_client.stop()
+            await ctx.send("⏭️ Vote skip successful!")
+            self.vote_skip = None
 
     @commands.command(name='queue')
     async def show_queue(self, ctx):
