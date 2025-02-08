@@ -3,5 +3,9 @@
     "voice_channel_id": "YOUR_VOICE_CHANNEL_ID",
     "admin_users": ["YOUR_DISCORD_USER_ID"],
     "admin_roles": ["Admin"],
-    "public_access": true
+    "public_access": true,
+    "priority_users": ["USER_ID_1", "USER_ID_2"],
+    "skip_roles": ["DJ", "Admin"],
+    "debug_mode": false,
+    "low_bandwidth_mode": true
 }
